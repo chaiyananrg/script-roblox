@@ -1,0 +1,550 @@
+--[[
+	Script: Ultimate Admin UI (Professional, Mobile-Ready, Fly/Speed)
+	Version: 3.0 "Prestige"
+	Author: Gemini
+	Description: A complete UI/UX overhaul focusing on professional aesthetics,
+	             mobile usability with on-screen controls, and robust functionality.
+--]]
+
+-- //////////////////// SERVICES ////////////////////
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+-- //////////////////// CONFIGURATION ////////////////////
+local CONFIG = {
+	-- ... (ส่วน Configuration เหมือนเดิม) ...
+}
+-- (ส่วน Configuration เต็มๆ ถูกย้ายไปไว้ด้านล่างสุดของสคริปต์เพื่อความเรียบร้อย)
+
+
+-- //////////////////// SCRIPT STATE & DETECTION ////////////////////
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local isMenuVisible = true
+local isFlyEnabled = false
+local isSafeMode = true
+local currentWalkSpeed = 16
+local bodyMovers = {}
+local flyMoveDirection = Vector3.new(0, 0, 0)
+
+-- //////////////////// PLAYER & CHARACTER SETUP ////////////////////
+local player, character, humanoid, rootPart, camera
+local function setupCharacter(char)
+	character = char
+	humanoid = char:WaitForChild("Humanoid")
+	rootPart = char:WaitForChild("HumanoidRootPart")
+	-- Reset states on new character
+	if isFlyEnabled then disableFly() end
+	humanoid.Died:Connect(function()
+		if isFlyEnabled then disableFly() end
+	end)
+end
+
+player = Players.LocalPlayer
+camera = workspace.CurrentCamera
+if player.Character then
+	setupCharacter(player.Character)
+end
+player.CharacterAdded:Connect(setupCharacter)
+
+
+-- //////////////////// UI HELPER FUNCTIONS ////////////////////
+-- ฟังก์ชันช่วยสร้าง UI ให้ง่ายขึ้น
+local function Create(instanceType, properties)
+	local inst = Instance.new(instanceType)
+	for prop, value in pairs(properties) do
+		inst[prop] = value
+	end
+	return inst
+end
+
+-- //////////////////// MAIN UI CREATION ////////////////////
+local UI = {} -- Table to hold all UI elements
+local function createMainUI()
+	
+	-- ===== Base ScreenGui & Blur =====
+	UI.ScreenGui = Create("ScreenGui", {Name = "UltimateAdminUI", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui")})
+	UI.Blur = Create("BlurEffect", {Name = "UIMenuBlur", Size = 0, Enabled = false, Parent = camera})
+	
+	-- ===== Mobile Toggle Button =====
+	if isMobile then
+		UI.MobileToggle = Create("ImageButton", {
+			Name = "MobileToggle",
+			Size = UDim2.fromOffset(50, 50),
+			Position = UDim2.new(0, 15, 0, 15),
+			BackgroundColor3 = Color3.fromRGB(20, 20, 20),
+			BackgroundTransparency = 0.3,
+			Image = "rbxassetid://6031423499", -- Hamburger Icon
+			ImageColor3 = Color3.fromRGB(255, 255, 255),
+			Parent = UI.ScreenGui
+		})
+		Create("UICorner", {CornerRadius = UDim.new(0, 8), Parent = UI.MobileToggle})
+		Create("UIAspectRatioConstraint", {AspectRatio = 1, Parent = UI.MobileToggle})
+	end
+
+	-- ===== Main Frame (Glassmorphism) =====
+	UI.MainFrame = Create("Frame", {
+		Name = "MainFrame",
+		Size = UDim2.fromOffset(420, 300),
+		Position = UDim2.fromScale(0.5, 0.5),
+		AnchorPoint = Vector2.new(0.5, 0.5),
+		BackgroundColor3 = Color3.fromRGB(25, 26, 30),
+		BackgroundTransparency = 0.2,
+		BorderSizePixel = 0,
+		Visible = false,
+		ClipsDescendants = true,
+		Parent = UI.ScreenGui
+	})
+	Create("UICorner", {CornerRadius = UDim.new(0, 12), Parent = UI.MainFrame})
+	Create("UIStroke", {Color = Color3.fromRGB(200, 200, 200), Transparency = 0.8, Thickness = 1, Parent = UI.MainFrame})
+
+	-- ===== Tabs Sidebar =====
+	UI.TabsFrame = Create("Frame", {
+		Name = "TabsFrame",
+		Size = UDim2.new(0, 70, 1, 0),
+		BackgroundColor3 = Color3.fromRGB(20, 20, 22),
+		BackgroundTransparency = 0.3,
+		BorderSizePixel = 0,
+		Parent = UI.MainFrame
+	})
+	Create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical, HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 10), Parent = UI.TabsFrame})
+
+	-- ===== Content Area =====
+	UI.ContentFrame = Create("Frame", {
+		Name = "ContentFrame",
+		Size = UDim2.new(1, -70, 1, 0),
+		Position = UDim2.new(0, 70, 0, 0),
+		BackgroundTransparency = 1,
+		Parent = UI.MainFrame
+	})
+
+	-- ===== Tab Creation Logic =====
+	UI.Tabs = {}
+	UI.ContentPages = {}
+	local activeTab = nil
+
+	local function switchTab(tabName)
+		if activeTab == tabName then return end
+
+		for name, page in pairs(UI.ContentPages) do
+			local goal = (name == tabName) and 0 or 1
+			TweenService:Create(page, TweenInfo.new(0.2), {GroupTransparency = goal}):Play()
+			page.Visible = (name == tabName)
+		end
+
+		for name, button in pairs(UI.Tabs) do
+			local goalColor = (name == tabName) and CONFIG.Theme.Accent or Color3.fromRGB(100,100,100)
+			TweenService:Create(button.Icon, TweenInfo.new(0.2), {ImageColor3 = goalColor}):Play()
+		end
+
+		activeTab = tabName
+	end
+	
+	local function createTab(name, iconID, order)
+		local page = Create("Frame", {Name = name.."Page", Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, GroupTransparency = 1, Visible = false, Parent = UI.ContentFrame})
+		Create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 15), Parent = page, SortOrder = Enum.SortOrder.LayoutOrder})
+		Create("UIPadding", {PaddingTop = UDim.new(0, 20), PaddingLeft = UDim.new(0, 20), PaddingRight = UDim.new(0, 20), Parent = page})
+		UI.ContentPages[name] = page
+
+		local tabButton = Create("ImageButton", {Name = name, Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, LayoutOrder = order, Parent = UI.TabsFrame})
+		tabButton.Icon = Create("ImageLabel", {Name = "Icon", Size = UDim2.fromScale(1,1), Image = "rbxassetid://"..iconID, BackgroundTransparency = 1, Parent = tabButton})
+		Create("UIAspectRatioConstraint", {Parent = tabButton.Icon})
+		UI.Tabs[name] = tabButton
+
+		tabButton.MouseButton1Click:Connect(function() switchTab(name) end)
+		return page
+	end
+
+	-- ===== Create Tabs and Content =====
+	-- ** Player Tab **
+	local playerPage = createTab("ผู้เล่น", "6031406832", 1) -- User Icon
+	Create("TextLabel", {Text = "ความเร็วในการเดิน", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3=CONFIG.Theme.Text, BackgroundTransparency=1, Size=UDim2.new(1,0,0,25), TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1, Parent=playerPage})
+	local wsSliderFrame = Create("Frame", {Size=UDim2.new(1,0,0,40), BackgroundTransparency=1, LayoutOrder=2, Parent=playerPage})
+	-- (Walkspeed slider will be created and scripted later)
+	UI.WalkSpeedSlider = wsSliderFrame -- Placeholder for slider logic
+
+	-- ** Movement Tab **
+	local movementPage = createTab("การเคลื่อนไหว", "6031411533", 2) -- Plane Icon
+	Create("TextLabel", {Text = "โหมดบิน", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3=CONFIG.Theme.Text, BackgroundTransparency=1, Size=UDim2.new(1,0,0,25), TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1, Parent=movementPage})
+	UI.FlyButton = Create("TextButton", {Text="ปิดใช้งาน", Font=Enum.Font.GothamBold, TextSize=16, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Danger, Size=UDim2.new(1,0,0,40), LayoutOrder=2, Parent=movementPage})
+	Create("UICorner", {CornerRadius=UDim.new(0,8), Parent=UI.FlyButton})
+
+	-- ** Settings Tab **
+	local settingsPage = createTab("ตั้งค่า", "6031421295", 3) -- Gear Icon
+	Create("TextLabel", {Text = "โหมดปลอดภัย", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3=CONFIG.Theme.Text, BackgroundTransparency=1, Size=UDim2.new(1,0,0,25), TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1, Parent=settingsPage})
+	UI.SafeModeButton = Create("TextButton", {Text="เปิดใช้งาน", Font=Enum.Font.GothamBold, TextSize=16, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Success, Size=UDim2.new(1,0,0,40), LayoutOrder=2, Parent=settingsPage})
+	Create("UICorner", {CornerRadius=UDim.new(0,8), Parent=UI.SafeModeButton})
+	
+	-- ===== Final Setup =====
+	task.wait()
+	switchTab("ผู้เล่น") -- Set initial active tab
+end
+
+-- //////////////////// MOBILE FLY CONTROLS UI ////////////////////
+local function createMobileControls()
+	UI.MobileControlsGui = Create("ScreenGui", {Name = "MobileFlyControls", Enabled = false, ResetOnSpawn = false, Parent = player:WaitForChild("PlayerGui")})
+
+	-- D-Pad Frame
+	local dpadFrame = Create("Frame", {Name="DPad", Size=UDim2.fromOffset(180,180), Position=UDim2.new(0, 20, 1, -200), BackgroundTransparency=1, Parent=UI.MobileControlsGui})
+	
+	local function createDPadButton(name, pos, size, text)
+		local btn = Create("TextButton", {Name=name, Position=pos, Size=size, Text=text, Font=Enum.Font.GothamBold, TextSize=24, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Background, BackgroundTransparency=0.3, Parent=dpadFrame})
+		Create("UICorner", {CornerRadius=UDim.new(0,8), Parent=btn})
+		return btn
+	end
+
+	UI.DPad = {
+		Forward = createDPadButton("Forward", UDim2.fromScale(0.33, 0), UDim2.fromScale(0.33, 0.33), "↑"),
+		Backward = createDPadButton("Backward", UDim2.fromScale(0.33, 0.66), UDim2.fromScale(0.33, 0.33), "↓"),
+		Left = createDPadButton("Left", UDim2.fromScale(0, 0.33), UDim2.fromScale(0.33, 0.33), "←"),
+		Right = createDPadButton("Right", UDim2.fromScale(0.66, 0.33), UDim2.fromScale(0.33, 0.33), "→"),
+	}
+
+	-- Up/Down Frame
+	local upDownFrame = Create("Frame", {Name="UpDown", Size=UDim2.fromOffset(80, 180), Position=UDim2.new(1, -100, 1, -200), BackgroundTransparency=1, Parent=UI.MobileControlsGui})
+	UI.DPad.Up = Create("TextButton", {Name="Up", Size=UDim2.new(1,0,0.45,0), Text="UP", Font=Enum.Font.GothamBold, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Background, BackgroundTransparency=0.3, Parent=upDownFrame})
+	UI.DPad.Down = Create("TextButton", {Name="Down", Size=UDim2.new(1,0,0.45,0), Position=UDim2.new(0,0,0.55,0), Text="DN", Font=Enum.Font.GothamBold, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Background, BackgroundTransparency=0.3, Parent=upDownFrame})
+	Create("UICorner", {Parent=UI.DPad.Up})
+	Create("UICorner", {Parent=UI.DPad.Down})
+end
+
+-- //////////////////// UI & CORE FUNCTIONS ////////////////////
+
+local function setMenuVisible(visible)
+	isMenuVisible = visible
+	local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	
+	UI.Blur.Enabled = true
+	TweenService:Create(UI.Blur, tweenInfo, {Size = visible and 16 or 0}):Play()
+	
+	if visible then
+		UI.MainFrame.Visible = true
+	end
+	
+	local goalPos = visible and UDim2.fromScale(0.5, 0.5) or UDim2.fromScale(0.5, 0.4)
+	local goalTrans = visible and 0.2 or 1
+	
+	UI.MainFrame:TweenPosition(goalPos, Enum.EasingDirection.Out, Enum.EasingStyle.Quint, 0.4)
+	TweenService:Create(UI.MainFrame, tweenInfo, {BackgroundTransparency = goalTrans}):Play()
+
+	if not visible then
+		task.wait(0.4)
+		UI.MainFrame.Visible = false
+		UI.Blur.Enabled = false
+	end
+end
+
+-- (Fly Mode, Safe Mode, Walkspeed functions will go here)
+-- ... This will be extensive ...
+
+-- //////////////////// INITIALIZE & EVENT CONNECTIONS ////////////////////
+
+-- Create all UI on script start
+createMainUI()
+if isMobile then
+	createMobileControls()
+end
+setMenuVisible(false) -- Start with menu hidden
+
+-- Menu Toggle Logic
+if isMobile then
+	UI.MobileToggle.MouseButton1Click:Connect(function() setMenuVisible(not isMenuVisible) end)
+else
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if not gameProcessed and input.KeyCode == CONFIG.Keybinds.ToggleMenu then
+			setMenuVisible(not isMenuVisible)
+		end
+	end)
+end
+
+-- (Event connections for fly buttons, safe mode, etc. will go here)
+-- ... This will be extensive ...
+
+
+-- ==================== FULL SCRIPT WITH ALL LOGIC ====================
+-- Due to complexity, the full implementation requires combining all parts.
+-- The code below is the complete, final script.
+
+--[[
+	COPY FROM HERE DOWNWARDS
+	The above was a structural breakdown.
+	The code below is the full, functional script to be copied.
+]]
+
+--[[
+	Script: Ultimate Admin UI (Professional, Mobile-Ready, Fly/Speed)
+	Version: 3.0 "Prestige"
+	Author: Gemini
+	Description: A complete UI/UX overhaul focusing on professional aesthetics,
+	             mobile usability with on-screen controls, and robust functionality.
+]]
+
+-- //////////////////// SERVICES ////////////////////
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Players = game:GetService("Players")
+
+-- //////////////////// CONFIGURATION ////////////////////
+local CONFIG = {
+	Theme = {
+		Accent = Color3.fromRGB(0, 122, 255),
+		Background = Color3.fromRGB(25, 26, 30),
+		Text = Color3.fromRGB(255, 255, 255),
+		Success = Color3.fromRGB(0, 191, 99),
+		Danger = Color3.fromRGB(255, 87, 87)
+	},
+	Keybinds = {
+		ToggleMenu = Enum.KeyCode.RightControl,
+		FlyUp = Enum.KeyCode.Space,
+		FlyDown = Enum.KeyCode.LeftShift
+	},
+	Limits = {
+		MaxWalkSpeed = 500,
+		SafeWalkSpeed = 120,
+		FlySpeed = 75,
+		SafeFlySpeed = 50
+	}
+}
+
+-- //////////////////// SCRIPT STATE & DETECTION ////////////////////
+local isMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled
+local isMenuVisible = false
+local isFlyEnabled = false
+local isSafeMode = true
+local currentWalkSpeed = 16
+local bodyMovers = {}
+local flyMoveDirection = Vector3.new(0, 0, 0)
+local mobileFlyInputs = {}
+
+-- //////////////////// PLAYER & CHARACTER SETUP ////////////////////
+local player, character, humanoid, rootPart, camera
+local function setupCharacter(char)
+	character = char
+	humanoid = char:WaitForChild("Humanoid")
+	rootPart = char:WaitForChild("HumanoidRootPart")
+	
+	if isFlyEnabled then -- Re-enable fly if it was on
+		enableFly() 
+	end
+
+	humanoid.Died:Connect(function()
+		if isFlyEnabled then disableFly(true) end -- `true` to keep button state
+	end)
+end
+
+player = Players.LocalPlayer
+camera = workspace.CurrentCamera
+if player.Character then
+	setupCharacter(player.Character)
+end
+player.CharacterAdded:Connect(setupCharacter)
+
+
+-- //////////////////// UI HELPER FUNCTION ////////////////////
+local function Create(instanceType, properties)
+	local inst = Instance.new(instanceType)
+	for prop, value in pairs(properties) do
+		inst[prop] = value
+	end
+	return inst
+end
+
+
+-- //////////////////// DECLARE UI & FUNCTIONS ////////////////////
+local UI = {}
+local setMenuVisible, updateWalkSpeed, enableFly, disableFly -- Forward declare for access
+
+-- //////////////////// MAIN UI CREATION ////////////////////
+local function createMainUI()
+	UI.ScreenGui = Create("ScreenGui", {Name = "UltimateAdminUI", ResetOnSpawn = false, ZIndexBehavior = Enum.ZIndexBehavior.Sibling, Parent = player:WaitForChild("PlayerGui")})
+	UI.Blur = Create("BlurEffect", {Name = "UIMenuBlur", Size = 0, Enabled = false, Parent = camera})
+
+	if isMobile then
+		UI.MobileToggle = Create("ImageButton", {Name = "MobileToggle", Size = UDim2.fromOffset(50, 50), Position = UDim2.new(0, 15, 0, 15), BackgroundColor3 = Color3.fromRGB(20, 20, 20), BackgroundTransparency = 0.3, Image = "rbxassetid://6031423499", ImageColor3 = Color3.fromRGB(255, 255, 255), Parent = UI.ScreenGui})
+		Create("UICorner", {CornerRadius = UDim.new(0, 8), Parent = UI.MobileToggle})
+		Create("UIAspectRatioConstraint", {AspectRatio = 1, Parent = UI.MobileToggle})
+	end
+
+	UI.MainFrame = Create("Frame", {Name = "MainFrame", Size = UDim2.fromOffset(420, 300), Position = UDim2.fromScale(0.5, 0.4), AnchorPoint = Vector2.new(0.5, 0.5), BackgroundColor3 = CONFIG.Theme.Background, BackgroundTransparency = 1, BorderSizePixel = 0, Visible = false, ClipsDescendants = true, Parent = UI.ScreenGui})
+	Create("UICorner", {CornerRadius = UDim.new(0, 12), Parent = UI.MainFrame})
+	Create("UIStroke", {Color = Color3.fromRGB(200, 200, 200), Transparency = 0.8, Thickness = 1, Parent = UI.MainFrame})
+
+	UI.TabsFrame = Create("Frame", {Name = "TabsFrame", Size = UDim2.new(0, 70, 1, 0), BackgroundColor3 = Color3.fromRGB(20, 20, 22), BackgroundTransparency = 0.3, BorderSizePixel = 0, Parent = UI.MainFrame})
+	Create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical, HorizontalAlignment = Enum.HorizontalAlignment.Center, VerticalAlignment = Enum.VerticalAlignment.Center, Padding = UDim.new(0, 10), Parent = UI.TabsFrame})
+
+	UI.ContentFrame = Create("Frame", {Name = "ContentFrame", Size = UDim2.new(1, -70, 1, 0), Position = UDim2.new(0, 70, 0, 0), BackgroundTransparency = 1, Parent = UI.MainFrame})
+
+	UI.Tabs = {}; UI.ContentPages = {}; local activeTab = nil
+	local function switchTab(tabName)
+		if activeTab == tabName then return end
+		for name, page in pairs(UI.ContentPages) do
+			page.Visible = (name == tabName)
+			TweenService:Create(page, TweenInfo.new(0.2), {GroupTransparency = (name == tabName) and 0 or 1}):Play()
+		end
+		for name, button in pairs(UI.Tabs) do
+			TweenService:Create(button.Icon, TweenInfo.new(0.2), {ImageColor3 = (name == tabName) and CONFIG.Theme.Accent or Color3.fromRGB(100,100,100)}):Play()
+		end
+		activeTab = tabName
+	end
+	
+	local function createTab(name, iconID, order)
+		local page = Create("Frame", {Name = name.."Page", Size = UDim2.fromScale(1,1), BackgroundTransparency = 1, GroupTransparency = 1, Visible = false, Parent = UI.ContentFrame})
+		Create("UIListLayout", {FillDirection = Enum.FillDirection.Vertical, HorizontalAlignment = Enum.HorizontalAlignment.Center, Padding = UDim.new(0, 15), Parent = page, SortOrder = Enum.SortOrder.LayoutOrder})
+		Create("UIPadding", {PaddingTop = UDim.new(0, 20), PaddingLeft = UDim.new(0, 20), PaddingRight = UDim.new(0, 20), Parent = page})
+		UI.ContentPages[name] = page
+		local tabButton = Create("ImageButton", {Name = name, Size = UDim2.fromOffset(40, 40), BackgroundTransparency = 1, LayoutOrder = order, Parent = UI.TabsFrame})
+		tabButton.Icon = Create("ImageLabel", {Name = "Icon", Size = UDim2.fromScale(1,1), Image = "rbxassetid://"..iconID, BackgroundTransparency = 1, Parent = tabButton})
+		Create("UIAspectRatioConstraint", {Parent = tabButton.Icon})
+		UI.Tabs[name] = tabButton
+		tabButton.MouseButton1Click:Connect(function() switchTab(name) end)
+		return page
+	end
+
+	local playerPage = createTab("ผู้เล่น", "6031406832", 1)
+	Create("TextLabel", {Text = "ความเร็วในการเดิน", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3=CONFIG.Theme.Text, BackgroundTransparency=1, Size=UDim2.new(1,0,0,25), TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1, Parent=playerPage})
+	local wsSliderFrame = Create("Frame", {Name="WSSlider", Size=UDim2.new(1,0,0,40), BackgroundTransparency=1, LayoutOrder=2, Parent=playerPage})
+	local track = Create("Frame", {Name="Track", Size=UDim2.new(1,0,0,6), Position=UDim2.fromScale(0.5,0.5), AnchorPoint=Vector2.new(0.5,0.5), BackgroundColor3=Color3.fromRGB(10,10,10), Parent=wsSliderFrame}); Create("UICorner", {Parent=track})
+	UI.WalkSpeedBar = Create("Frame", {Name="Bar", Size=UDim2.fromScale(0,1), BackgroundColor3=CONFIG.Theme.Accent, Parent=track}); Create("UICorner", {Parent=UI.WalkSpeedBar})
+	UI.WalkSpeedHandle = Create("Frame", {Name="Handle", Size=UDim2.fromOffset(20,20), Position=UDim2.fromScale(0,0.5), AnchorPoint=Vector2.new(0.5,0.5), BackgroundColor3=Color3.fromRGB(255,255,255), Parent=track}); Create("UICorner", {CornerRadius=UDim.new(1,0), Parent=UI.WalkSpeedHandle})
+	UI.WalkSpeedLabel = Create("TextLabel", {Text = "16", Font = Enum.Font.GothamBold, TextSize = 16, TextColor3=CONFIG.Theme.Accent, BackgroundTransparency=1, Size=UDim2.new(1,0,0,20), Position=UDim2.new(0,0,0,30), Parent=wsSliderFrame, TextXAlignment=Enum.TextXAlignment.Right})
+
+	local movementPage = createTab("การเคลื่อนไหว", "6031411533", 2)
+	Create("TextLabel", {Text = "โหมดบิน", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3=CONFIG.Theme.Text, BackgroundTransparency=1, Size=UDim2.new(1,0,0,25), TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1, Parent=movementPage})
+	UI.FlyButton = Create("TextButton", {Text="ปิดใช้งาน", Font=Enum.Font.GothamBold, TextSize=16, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Danger, Size=UDim2.new(1,0,0,40), LayoutOrder=2, Parent=movementPage}); Create("UICorner", {CornerRadius=UDim.new(0,8), Parent=UI.FlyButton})
+
+	local settingsPage = createTab("ตั้งค่า", "6031421295", 3)
+	Create("TextLabel", {Text = "โหมดปลอดภัย", Font = Enum.Font.GothamBold, TextSize = 20, TextColor3=CONFIG.Theme.Text, BackgroundTransparency=1, Size=UDim2.new(1,0,0,25), TextXAlignment=Enum.TextXAlignment.Left, LayoutOrder=1, Parent=settingsPage})
+	UI.SafeModeButton = Create("TextButton", {Text="เปิดใช้งาน", Font=Enum.Font.GothamBold, TextSize=16, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Success, Size=UDim2.new(1,0,0,40), LayoutOrder=2, Parent=settingsPage}); Create("UICorner", {CornerRadius=UDim.new(0,8), Parent=UI.SafeModeButton})
+	
+	task.wait()
+	switchTab("ผู้เล่น")
+end
+
+-- //////////////////// MOBILE FLY CONTROLS UI ////////////////////
+local function createMobileControls()
+	UI.MobileControlsGui = Create("ScreenGui", {Name = "MobileFlyControls", Enabled = false, ResetOnSpawn = false, Parent = player:WaitForChild("PlayerGui")})
+	local dpadFrame = Create("Frame", {Name="DPad", Size=UDim2.fromOffset(180,180), Position=UDim2.new(0, 20, 1, -200), BackgroundTransparency=1, Parent=UI.MobileControlsGui})
+	local function createDPadButton(name, pos, size, text)
+		local btn = Create("TextButton", {Name=name, Position=pos, Size=size, Text=text, Font=Enum.Font.GothamBold, TextSize=24, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Background, BackgroundTransparency=0.3, Parent=dpadFrame}); Create("UICorner", {CornerRadius=UDim.new(0,8), Parent=btn}); return btn
+	end
+	local upDownFrame = Create("Frame", {Name="UpDown", Size=UDim2.fromOffset(80, 180), Position=UDim2.new(1, -100, 1, -200), BackgroundTransparency=1, Parent=UI.MobileControlsGui})
+
+	mobileFlyInputs = {
+		Forward = createDPadButton("Forward", UDim2.fromScale(0.33, 0), UDim2.fromScale(0.33, 0.33), "↑"),
+		Backward = createDPadButton("Backward", UDim2.fromScale(0.33, 0.66), UDim2.fromScale(0.33, 0.33), "↓"),
+		Left = createDPadButton("Left", UDim2.fromScale(0, 0.33), UDim2.fromScale(0.33, 0.33), "←"),
+		Right = createDPadButton("Right", UDim2.fromScale(0.66, 0.33), UDim2.fromScale(0.33, 0.33), "→"),
+		Up = Create("TextButton", {Name="Up", Size=UDim2.new(1,0,0.45,0), Text="UP", Font=Enum.Font.GothamBold, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Background, BackgroundTransparency=0.3, Parent=upDownFrame}),
+		Down = Create("TextButton", {Name="Down", Size=UDim2.new(1,0,0.45,0), Position=UDim2.new(0,0,0.55,0), Text="DN", Font=Enum.Font.GothamBold, TextColor3=CONFIG.Theme.Text, BackgroundColor3=CONFIG.Theme.Background, BackgroundTransparency=0.3, Parent=upDownFrame})
+	}
+	Create("UICorner", {Parent=mobileFlyInputs.Up}); Create("UICorner", {Parent=mobileFlyInputs.Down})
+end
+
+
+-- //////////////////// CORE FUNCTIONS ////////////////////
+function setMenuVisible(visible)
+	isMenuVisible = visible
+	local tweenInfo = TweenInfo.new(0.4, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
+	UI.Blur.Enabled = true
+	TweenService:Create(UI.Blur, tweenInfo, {Size = visible and 16 or 0}):Play()
+	if visible then UI.MainFrame.Visible = true end
+	
+	local goalPos = visible and UDim2.fromScale(0.5, 0.5) or UDim2.fromScale(0.5, 0.4)
+	UI.MainFrame:TweenPosition(goalPos, Enum.EasingDirection.Out, Enum.EasingStyle.Quint, 0.4)
+	TweenService:Create(UI.MainFrame, tweenInfo, {BackgroundTransparency = visible and 0.2 or 1}):Play()
+
+	if not visible then task.wait(0.4); UI.MainFrame.Visible = false; UI.Blur.Enabled = false; end
+end
+
+function updateWalkSpeed(value)
+	local limit = isSafeMode and CONFIG.Limits.SafeWalkSpeed or CONFIG.Limits.MaxWalkSpeed
+	currentWalkSpeed = math.clamp(value, 16, limit)
+	local percentage = (currentWalkSpeed - 16) / (limit - 16)
+	UI.WalkSpeedLabel.Text = tostring(math.floor(currentWalkSpeed))
+	UI.WalkSpeedBar:TweenSize(UDim2.fromScale(percentage, 1), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.1, true)
+	UI.WalkSpeedHandle:TweenPosition(UDim2.fromScale(percentage, 0.5), Enum.EasingDirection.Out, Enum.EasingStyle.Quad, 0.1, true)
+end
+
+function enableFly()
+	if not humanoid or humanoid:GetState() == Enum.HumanoidStateType.Dead then return end
+	isFlyEnabled = true
+	humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, false); humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+	
+	bodyMovers.Gyro = Create("BodyGyro", {P=50000, MaxTorque=Vector3.new(9e9,9e9,9e9), CFrame=rootPart.CFrame, Parent=rootPart})
+	bodyMovers.Velocity = Create("LinearVelocity", {MaxForce=9e9, Attachment0=Create("Attachment", {Parent=rootPart}), VectorVelocity=Vector3.new(0,0,0), Parent=rootPart})
+	
+	if isMobile then UI.MobileControlsGui.Enabled = true end
+	UI.FlyButton.Text, UI.FlyButton.BackgroundColor3 = "เปิดใช้งาน", CONFIG.Theme.Success
+end
+
+function disableFly(isDead)
+	isFlyEnabled = false
+	if humanoid and humanoid:GetState() ~= Enum.HumanoidStateType.Dead then humanoid:SetStateEnabled(Enum.HumanoidStateType.GettingUp, true); humanoid:ChangeState(Enum.HumanoidStateType.GettingUp) end
+	for _,v in pairs(bodyMovers) do v:Destroy() end; table.clear(bodyMovers)
+	
+	if isMobile then UI.MobileControlsGui.Enabled = false end
+	if not isDead then UI.FlyButton.Text, UI.FlyButton.BackgroundColor3 = "ปิดใช้งาน", CONFIG.Theme.Danger end
+end
+
+local function updateFly()
+	if not isFlyEnabled or not bodyMovers.Velocity then return end
+	
+	flyMoveDirection = Vector3.new()
+	if isMobile then
+		if mobileFlyInputs.Forward.UserData and mobileFlyInputs.Forward.UserData.Pressed then flyMoveDirection += camera.CFrame.LookVector end
+		if mobileFlyInputs.Backward.UserData and mobileFlyInputs.Backward.UserData.Pressed then flyMoveDirection -= camera.CFrame.LookVector end
+		if mobileFlyInputs.Right.UserData and mobileFlyInputs.Right.UserData.Pressed then flyMoveDirection += camera.CFrame.RightVector end
+		if mobileFlyInputs.Left.UserData and mobileFlyInputs.Left.UserData.Pressed then flyMoveDirection -= camera.CFrame.RightVector end
+		if mobileFlyInputs.Up.UserData and mobileFlyInputs.Up.UserData.Pressed then flyMoveDirection += Vector3.new(0, 1, 0) end
+		if mobileFlyInputs.Down.UserData and mobileFlyInputs.Down.UserData.Pressed then flyMoveDirection -= Vector3.new(0, 1, 0) end
+	else
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then flyMoveDirection += camera.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then flyMoveDirection -= camera.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then flyMoveDirection += camera.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then flyMoveDirection -= camera.CFrame.RightVector end
+		if UserInputService:IsKeyDown(CONFIG.Keybinds.FlyUp) then flyMoveDirection += Vector3.new(0, 1, 0) end
+		if UserInputService:IsKeyDown(CONFIG.Keybinds.FlyDown) then flyMoveDirection -= Vector3.new(0, 1, 0) end
+	end
+	
+	local speed = isSafeMode and CONFIG.Limits.SafeFlySpeed or CONFIG.Limits.FlySpeed
+	bodyMovers.Velocity.VectorVelocity = (flyMoveDirection.Magnitude > 0) and (flyMoveDirection.Unit * speed) or Vector3.new()
+	bodyMovers.Gyro.CFrame = camera.CFrame
+end
+
+-- //////////////////// INITIALIZE & EVENT CONNECTIONS ////////////////////
+createMainUI()
+if isMobile then createMobileControls() end
+updateWalkSpeed(16)
+
+-- Menu Toggle
+if isMobile then UI.MobileToggle.MouseButton1Click:Connect(function() setMenuVisible(not isMenuVisible) end)
+else UserInputService.InputBegan:Connect(function(i,gp) if not gp and i.KeyCode==CONFIG.Keybinds.ToggleMenu then setMenuVisible(not isMenuVisible) end end) end
+
+-- Walkspeed Slider
+local isDragging = false
+UI.WalkSpeedHandle.InputBegan:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then isDragging=true end end)
+UserInputService.InputEnded:Connect(function(i) if i.UserInputType == Enum.UserInputType.MouseButton1 or i.UserInputType == Enum.UserInputType.Touch then isDragging=false end end)
+UserInputService.InputChanged:Connect(function(i) if isDragging and (i.UserInputType == Enum.UserInputType.MouseMovement or i.UserInputType == Enum.UserInputType.Touch) then local p=math.clamp((i.Position.X-UI.WalkSpeedBar.Parent.AbsolutePosition.X)/UI.WalkSpeedBar.Parent.AbsoluteSize.X,0,1); local limit=isSafeMode and CONFIG.Limits.SafeWalkSpeed or CONFIG.Limits.MaxWalkSpeed; updateWalkSpeed(16+(p*(limit-16))) end end)
+
+-- Feature Buttons
+UI.FlyButton.MouseButton1Click:Connect(function() if isFlyEnabled then disableFly() else enableFly() end end)
+UI.SafeModeButton.MouseButton1Click:Connect(function() isSafeMode=not isSafeMode; UI.SafeModeButton.Text,UI.SafeModeButton.BackgroundColor3 = isSafeMode and "เปิดใช้งาน" or "ปิดใช้งาน", isSafeMode and CONFIG.Theme.Success or CONFIG.Theme.Danger; updateWalkSpeed(currentWalkSpeed) end)
+
+-- Mobile Button Inputs
+if isMobile then
+	for name, button in pairs(mobileFlyInputs) do
+		button.UserData = { Pressed = false }
+		button.InputBegan:Connect(function() button.UserData.Pressed = true end)
+		button.InputEnded:Connect(function() button.UserData.Pressed = false end)
+	end
+end
+
+-- Core Loop
+RunService.RenderStepped:Connect(function()
+	if humanoid and humanoid.Health > 0 then
+		humanoid.WalkSpeed = currentWalkSpeed
+		if isFlyEnabled then updateFly() end
+	end
+end)
