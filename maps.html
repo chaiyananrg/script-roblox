@@ -3,26 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Minimalist Location Map</title>
+    <title>Liquid Glass Geo-Locator</title>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
 
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;700&display=swap" rel="stylesheet">
+
     <style>
-        /* กำหนดให้ทุกอย่างชิดขอบและเต็มหน้าจอ */
+        /* --- Base Setup --- */
         html, body {
             height: 100%;
             margin: 0;
             padding: 0;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #000000; /* พื้นหลังสีดำสนิท */
+            font-family: 'Chakra Petch', sans-serif;
+            overflow: hidden; /* ป้องกัน scrollbar ที่ไม่จำเป็น */
         }
-        /* กำหนดให้แผนที่เต็มพื้นที่ของ body */
         #map {
             height: 100%;
             width: 100%;
-            /* ทำให้แผนที่ดูนุ่มนวลขึ้น (ทางเลือก) */
-            /* filter: grayscale(50%) contrast(1.2) brightness(1.1); */
+            background-color: #0a0a0a; /* สีพื้นหลังของแผนที่ก่อนโหลด */
         }
+
+        /* --- Liquid Glass Effect Overrides for Leaflet UI --- */
+
+        /* Popup Window */
+        .leaflet-popup-content-wrapper,
+        .leaflet-popup-tip {
+            background: rgba(0, 255, 100, 0.1); /* พื้นหลังกระจกสีเขียวโปร่งแสง */
+            color: #00ff41; /* สีตัวอักษร */
+            border: 1px solid rgba(0, 255, 100, 0.5); /* ขอบกระจก */
+            border-radius: 8px;
+            box-shadow: 0 0 25px rgba(0, 255, 100, 0.5); /* แสงเรืองรอบๆ */
+            backdrop-filter: blur(10px); /* เอฟเฟกต์กระจกฝ้า */
+            -webkit-backdrop-filter: blur(10px);
+            font-size: 1.1em;
+        }
+
+        .leaflet-popup-content-wrapper b {
+             text-shadow: 0 0 5px #00ff41;
+        }
+
+        /* Zoom Control Buttons */
+        .leaflet-control-zoom-in,
+        .leaflet-control-zoom-out {
+            background: rgba(0, 255, 100, 0.1) !important;
+            border: 1px solid rgba(0, 255, 100, 0.5) !important;
+            color: #00ff41 !important;
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+            border-radius: 4px !important;
+        }
+        .leaflet-control-zoom-in:hover,
+        .leaflet-control-zoom-out:hover {
+            background: rgba(0, 255, 100, 0.3) !important;
+            color: #ffffff !important;
+        }
+
+        /* Attribution Link */
+        .leaflet-control-attribution {
+            background: rgba(0, 0, 0, 0.5) !important;
+            color: #00ff41;
+            padding: 2px 5px;
+            border-radius: 3px;
+        }
+        .leaflet-control-attribution a {
+            color: #9affb4 !important; /* สีลิงก์ */
+        }
+
+        /* --- Custom Animated Marker --- */
+        @keyframes pulse {
+            0% {
+                transform: scale(0.9);
+                opacity: 0.7;
+            }
+            70% {
+                transform: scale(1.1);
+                opacity: 1;
+            }
+            100% {
+                transform: scale(0.9);
+                opacity: 0.7;
+            }
+        }
+
+        .liquid-marker {
+            /* สร้างเงาเรืองแสงสีเขียวรอบๆ ไอคอน */
+            filter: drop-shadow(0 0 10px #00ff41) drop-shadow(0 0 20px #00ff41);
+            animation: pulse 2.5s infinite ease-in-out;
+        }
+
     </style>
 </head>
 <body>
@@ -30,50 +103,44 @@
     <div id="map"></div>
 
     <script>
-        // 2. ตั้งค่าแผนที่เริ่มต้น
-        // ใช้พิกัดใจกลางโลกและซูมออกมาไกลๆ เพื่อความรู้สึกแบบ Global
-        const map = L.map('map', {
-            zoomControl: false // ซ่อนปุ่ม +/- สำหรับซูม
-        }).setView([20, 0], 2);
+        // 3. ตั้งค่าแผนที่เริ่มต้น
+        const map = L.map('map').setView([13.75, 100.5], 6); // Start at BKK
 
-        // เพิ่มปุ่มซูมในตำแหน่งที่เรียบง่ายกว่า (ขวาบน)
-        L.control.zoom({ position: 'topright' }).addTo(map);
-
-        // 3. ใช้ Tile Layer แบบมินิมอลจาก CartoDB
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager_labels_under/{z}/{x}/{y}{r}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
+        // 4. ใช้ Tile Layer แบบ Dark Mode จาก CartoDB
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions">CARTO</a>',
             subdomains: 'abcd',
             maxZoom: 20
         }).addTo(map);
 
-        // 4. ฟังก์ชันเมื่อหาตำแหน่งสำเร็จ
+        // 5. สร้างไอคอน Marker แบบ Custom ด้วย SVG และ CSS
+        const liquidIcon = L.divIcon({
+            html: `
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48">
+                    <path fill="#00ff41" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/>
+                </svg>
+            `,
+            className: 'liquid-marker', // คลาสสำหรับ CSS animation และ filter
+            iconSize: [48, 48],
+            iconAnchor: [24, 48], // ให้ปลายแหลมของไอคอนชี้ที่ตำแหน่ง
+            popupAnchor: [0, -48] // ให้ Popup แสดงเหนือไอคอน
+        });
+
         function onLocationFound(e) {
-            const radius = e.accuracy / 2;
-            
-            // ใช้ flyTo เพื่อให้เกิดแอนิเมชันการเคลื่อนที่ที่นุ่มนวล
-            map.flyTo(e.latlng, 16, {
-                animate: true,
-                duration: 1.5 // ระยะเวลาแอนิเมชัน (วินาที)
-            });
-
-            // เพิ่ม Marker ที่ตำแหน่งของผู้ใช้
-            L.marker(e.latlng).addTo(map)
-                .bindPopup("<b>คุณอยู่ที่นี่</b>").openPopup();
+            map.flyTo(e.latlng, 16);
+            L.marker(e.latlng, {icon: liquidIcon}).addTo(map)
+                .bindPopup(`<b>SYSTEM::LOCATION_ACQUIRED</b><br>LAT: ${e.latlng.lat.toFixed(6)}<br>LON: ${e.latlng.lng.toFixed(6)}<br>ACCURACY: ${e.accuracy.toFixed(0)}m`)
+                .openPopup();
         }
 
-        // ฟังก์ชันเมื่อหาตำแหน่งไม่สำเร็จ
         function onLocationError(e) {
-            // ไม่ต้องแสดงกล่องข้อความ แต่จะแจ้งใน Console ของเบราว์เซอร์แทน
-            console.warn(`ไม่สามารถระบุตำแหน่งได้: ${e.message}`);
-            alert("ไม่สามารถเข้าถึงตำแหน่งของคุณได้ โปรดตรวจสอบการตั้งค่าเบราว์เซอร์");
+            alert(`ERROR_CODE: ${e.code}\nMESSAGE: ${e.message}`);
         }
 
-        // 5. สั่งให้แผนที่ค้นหาตำแหน่ง
         map.on('locationfound', onLocationFound);
         map.on('locationerror', onLocationError);
 
-        // เริ่มกระบวนการค้นหาตำแหน่ง
-        map.locate({setView: false, maxZoom: 16, watch: false}); // setView: false เพื่อให้เราควบคุมแอนิเมชันเองผ่าน flyTo
+        map.locate({setView: false, maxZoom: 16});
 
     </script>
 
