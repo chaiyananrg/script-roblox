@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sphere: An Interactive World</title>
+    <title>Terra Minimalist Interactive Globe</title>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
@@ -15,13 +15,13 @@
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
 
     <style>
-        /* --- 1. Core Design System --- */
+        /* --- 1. Core Design System (Light Mode) --- */
         :root {
-            --background-color: #111827; /* Dark Slate Blue */
-            --text-color: #E5E7EB; /* Light Gray */
-            --accent-color: #38BDF8; /* Sky Blue */
-            --subtle-color: #4B5563; /* Medium Gray */
-            --surface-color: #1F2937; /* Darker Slate Blue */
+            --background-color: #F9FAFB; /* Off-white */
+            --text-color: #111827; /* Dark Gray */
+            --accent-color: #F59E0B; /* Amber/Warm Orange */
+            --subtle-color: #D1D5DB; /* Light Gray */
+            --surface-color: #FFFFFF; /* Pure White */
         }
 
         html, body {
@@ -33,52 +33,52 @@
             overflow: hidden;
         }
 
-        /* --- 2. View Containers (The Magic Switch) --- */
+        /* --- 2. View Containers --- */
         .view-container {
             position: absolute;
             top: 0; left: 0;
             width: 100%; height: 100%;
-            transition: opacity 0.6s ease-in-out;
+            transition: opacity 0.5s ease-in-out;
         }
 
         #map-container {
             z-index: 10;
-            opacity: 0; /* Initially hidden */
+            opacity: 0;
+            pointer-events: none;
         }
         #globe-container {
             z-index: 5;
-            opacity: 1; /* Initially visible */
+            opacity: 1;
             display: flex;
             align-items: center;
             justify-content: center;
+            cursor: move;
         }
         
-        /* --- 3. D3 Globe Styling --- */
+        /* --- 3. D3 Globe Styling (Light & Clean) --- */
         .globe-ocean {
-            fill: var(--background-color);
+            fill: none; /* Ocean is transparent, showing body background */
         }
         .globe-land {
-            fill: var(--subtle-color);
+            fill: #E5E7EB; /* Light gray landmass */
             stroke: var(--background-color);
-            stroke-width: 0.5px;
+            stroke-width: 0.7px;
         }
         .globe-graticule {
-            stroke: var(--surface-color);
+            stroke: #E5E7EB;
             stroke-width: 0.5px;
             fill: none;
         }
         .globe-highlight {
              fill: var(--accent-color);
+             opacity: 0.8;
         }
 
-        /* --- 4. Leaflet Map Styling (Minimalist) --- */
+        /* --- 4. Leaflet Map Styling (Bright & Minimal) --- */
         #map {
             height: 100%;
             width: 100%;
-        }
-        .leaflet-tile-pane {
-             /* Custom dark mode filter */
-            filter: grayscale(1) invert(1) brightness(0.9) contrast(0.9);
+            background-color: var(--background-color);
         }
         
         /* Popups & Controls */
@@ -87,28 +87,28 @@
             color: var(--text-color);
             border: 1px solid var(--subtle-color);
             border-radius: 8px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         .leaflet-control-zoom a {
             background-color: var(--surface-color);
             color: var(--text-color);
             border: 1px solid var(--subtle-color);
+            border-radius: 4px;
         }
          .leaflet-control-zoom a:hover {
-            background-color: var(--subtle-color);
+            background-color: #F3F4F6; /* Slightly off-white on hover */
         }
-        .leaflet-control-attribution { background: rgba(0,0,0,0.7) !important; color: var(--subtle-color); }
+        .leaflet-control-attribution { background: rgba(255,255,255,0.7) !important; color: #6B7280; }
         .leaflet-control-attribution a { color: var(--text-color) !important; }
 
         /* User Location Marker */
-        @keyframes pulse-dot { 0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); } 100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); } }
+        @keyframes pulse-dot { 0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(245, 158, 11, 0); } 100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); } }
         .user-location-marker {
-            width: 18px;
-            height: 18px;
+            width: 18px; height: 18px;
             background-color: var(--accent-color);
             border-radius: 50%;
             border: 2px solid #fff;
-            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
             animation: pulse-dot 2s infinite;
         }
 
@@ -123,13 +123,14 @@
     </div>
 
     <script>
-        const globeZoomThreshold = 3;
+        const globeZoomThreshold = 4;
 
         // --- A. LEAFLET 2D MAP SETUP ---
         const map = L.map('map', { zoomControl: false }).setView([20, 30], globeZoomThreshold + 1);
         L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+        // Using CartoDB Voyager - a beautiful, detailed light-theme map
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap &copy; CARTO',
             maxZoom: 20
         }).addTo(map);
@@ -141,50 +142,59 @@
         const svg = d3.select("#globe").attr("width", width).attr("height", height);
 
         const projection = d3.geoOrthographic()
-            .scale(Math.min(width, height) / 2 - 20)
+            .scale(Math.min(width, height) / 2 - 30)
             .translate([width / 2, height / 2])
             .clipAngle(90);
 
         const path = d3.geoPath().projection(projection);
 
-        // Drawing the globe elements
         const ocean = svg.append("path").datum({type: "Sphere"}).attr("class", "globe-ocean").attr("d", path);
         const graticule = svg.append("path").datum(d3.geoGraticule10()).attr("class", "globe-graticule").attr("d", path);
         let land;
 
-        // Auto-rotation
-        let autorotate;
-        const startRotation = () => {
-            autorotate = d3.timer(elapsed => {
-                projection.rotate([elapsed / 150, -15, 0]);
-                svg.selectAll("path").attr("d", path);
-            });
-        };
+        // Auto-rotation (stops after first interaction)
+        let autorotate = d3.timer(elapsed => {
+            projection.rotate([elapsed / 200, -15, 0]);
+            svg.selectAll("path").attr("d", path);
+        });
         const stopRotation = () => {
-            if (autorotate) autorotate.stop();
+            if (autorotate) {
+                autorotate.stop();
+                autorotate = null;
+            }
         };
 
-        // Drag to rotate
+        // Zoom & Drag interaction for the globe
+        const zoom = d3.zoom()
+            .scaleExtent([0.8, 10]) // Min/Max zoom scale
+            .on("start", stopRotation)
+            .on("zoom", (event) => {
+                const {k, x, y} = event.transform;
+                projection.scale( (Math.min(width, height) / 2 - 30) * k );
+                svg.selectAll("path").attr("d", path);
+            });
+            
         const drag = d3.drag()
             .on("start", stopRotation)
             .on("drag", (event) => {
                 const rotate = projection.rotate();
                 projection.rotate([rotate[0] + event.dx / 4, rotate[1] - event.dy / 4]);
                 svg.selectAll("path").attr("d", path);
-            })
-            .on("end", startRotation);
+            });
+
         svg.call(drag);
+        svg.call(zoom);
+
 
         // --- C. VIEW SWITCHING LOGIC ---
         const mapContainer = document.getElementById('map-container');
         function updateView() {
             const currentZoom = map.getZoom();
-            if (currentZoom <= globeZoomThreshold) {
+            if (currentZoom < globeZoomThreshold) { // Note the change to '<'
                 mapContainer.style.opacity = 0;
                 mapContainer.style.pointerEvents = 'none';
                 globeContainer.style.opacity = 1;
                 globeContainer.style.pointerEvents = 'auto';
-                startRotation();
             } else {
                 globeContainer.style.opacity = 0;
                 globeContainer.style.pointerEvents = 'none';
@@ -197,9 +207,7 @@
         
         // --- D. DATA LAYER (COUNTRIES & INTERACTION) ---
         const worldUrl = 'https://unpkg.com/world-atlas@2/countries-110m.json';
-        Promise.all([
-            d3.json(worldUrl)
-        ]).then(([worldData]) => {
+        d3.json(worldUrl).then(worldData => {
             const countries = topojson.feature(worldData, worldData.objects.countries);
 
             // Draw countries on D3 Globe
@@ -215,12 +223,13 @@
             const geoJsonLayer = L.geoJSON(countries, {
                 style: {
                     fillColor: "transparent",
-                    color: "transparent"
+                    color: "transparent",
+                    fillOpacity: 0.5
                 },
                 onEachFeature: (feature, layer) => {
                     layer.on('click', e => {
                         if (selectedLeafletLayer) selectedLeafletLayer.setStyle({ fillColor: "transparent" });
-                        layer.setStyle({ fillColor: 'var(--accent-color)', fillOpacity: 0.3 });
+                        layer.setStyle({ fillColor: 'var(--accent-color)' });
                         selectedLeafletLayer = layer;
                         L.DomEvent.stopPropagation(e);
                     });
@@ -230,8 +239,7 @@
              map.on('click', () => {
                 if(selectedLeafletLayer) selectedLeafletLayer.setStyle({ fillColor: "transparent" });
             });
-
-            updateView(); // Initial check
+            updateView();
         });
 
         // --- E. GEOLOCATION ---
@@ -239,7 +247,7 @@
         map.locate()
            .on('locationfound', e => {
                L.marker(e.latlng, { icon: userMarker }).addTo(map)
-                .bindPopup("<b>You are here.</b>")
+                .bindPopup("<b>Your Location</b>");
                map.flyTo(e.latlng, 13);
            });
 
