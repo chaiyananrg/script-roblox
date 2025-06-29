@@ -3,156 +3,244 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Interactive Liquid Glass World Map</title>
+    <title>Sphere: An Interactive World</title>
 
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <script src="https://d3js.org/topojson.v3.min.js"></script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap" rel="stylesheet">
 
     <style>
-        /* --- Base Setup (เหมือนเดิม) --- */
+        /* --- 1. Core Design System --- */
+        :root {
+            --background-color: #111827; /* Dark Slate Blue */
+            --text-color: #E5E7EB; /* Light Gray */
+            --accent-color: #38BDF8; /* Sky Blue */
+            --subtle-color: #4B5563; /* Medium Gray */
+            --surface-color: #1F2937; /* Darker Slate Blue */
+        }
+
         html, body {
-            height: 100%; margin: 0; padding: 0;
-            background-color: #000000;
-            font-family: 'Chakra Petch', sans-serif;
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background-color);
+            font-family: 'Inter', sans-serif;
             overflow: hidden;
         }
-        #map {
-            height: 100%; width: 100%;
-            background-color: #0a0a0a;
+
+        /* --- 2. View Containers (The Magic Switch) --- */
+        .view-container {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            transition: opacity 0.6s ease-in-out;
         }
 
-        /* --- Liquid Glass UI Overrides (เหมือนเดิม) --- */
-        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
-            background: rgba(0, 255, 100, 0.1); color: #00ff41;
-            border: 1px solid rgba(0, 255, 100, 0.5); border-radius: 8px;
-            box-shadow: 0 0 25px rgba(0, 255, 100, 0.5);
-            backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-            font-size: 1.1em;
+        #map-container {
+            z-index: 10;
+            opacity: 0; /* Initially hidden */
         }
-        .leaflet-popup-content-wrapper b { text-shadow: 0 0 5px #00ff41; }
-        .leaflet-control-zoom-in, .leaflet-control-zoom-out {
-            background: rgba(0, 255, 100, 0.1) !important;
-            border: 1px solid rgba(0, 255, 100, 0.5) !important;
-            color: #00ff41 !important; backdrop-filter: blur(5px);
-        }
-        .leaflet-control-attribution { background: rgba(0, 0, 0, 0.5) !important; color: #00ff41; }
-        .leaflet-control-attribution a { color: #9affb4 !important; }
-
-        /* --- Animated Marker (เหมือนเดิม) --- */
-        @keyframes pulse { 0% { transform: scale(0.9); } 70% { transform: scale(1.1); } 100% { transform: scale(0.9); } }
-        .liquid-marker {
-            filter: drop-shadow(0 0 10px #00ff41) drop-shadow(0 0 20px #00ff41);
-            animation: pulse 2.5s infinite ease-in-out;
+        #globe-container {
+            z-index: 5;
+            opacity: 1; /* Initially visible */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
         
-        /* --- Loading Indicator --- */
-        #loader {
-            position: absolute;
-            top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            color: #00ff41;
-            font-size: 2em;
-            z-index: 2000;
-            text-shadow: 0 0 10px #00ff41;
+        /* --- 3. D3 Globe Styling --- */
+        .globe-ocean {
+            fill: var(--background-color);
+        }
+        .globe-land {
+            fill: var(--subtle-color);
+            stroke: var(--background-color);
+            stroke-width: 0.5px;
+        }
+        .globe-graticule {
+            stroke: var(--surface-color);
+            stroke-width: 0.5px;
+            fill: none;
+        }
+        .globe-highlight {
+             fill: var(--accent-color);
+        }
+
+        /* --- 4. Leaflet Map Styling (Minimalist) --- */
+        #map {
+            height: 100%;
+            width: 100%;
+        }
+        .leaflet-tile-pane {
+             /* Custom dark mode filter */
+            filter: grayscale(1) invert(1) brightness(0.9) contrast(0.9);
+        }
+        
+        /* Popups & Controls */
+        .leaflet-popup-content-wrapper, .leaflet-popup-tip {
+            background: var(--surface-color);
+            color: var(--text-color);
+            border: 1px solid var(--subtle-color);
+            border-radius: 8px;
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+        }
+        .leaflet-control-zoom a {
+            background-color: var(--surface-color);
+            color: var(--text-color);
+            border: 1px solid var(--subtle-color);
+        }
+         .leaflet-control-zoom a:hover {
+            background-color: var(--subtle-color);
+        }
+        .leaflet-control-attribution { background: rgba(0,0,0,0.7) !important; color: var(--subtle-color); }
+        .leaflet-control-attribution a { color: var(--text-color) !important; }
+
+        /* User Location Marker */
+        @keyframes pulse-dot { 0% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0.7); } 70% { transform: scale(1); box-shadow: 0 0 0 10px rgba(56, 189, 248, 0); } 100% { transform: scale(0.8); box-shadow: 0 0 0 0 rgba(56, 189, 248, 0); } }
+        .user-location-marker {
+            width: 18px;
+            height: 18px;
+            background-color: var(--accent-color);
+            border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.5);
+            animation: pulse-dot 2s infinite;
         }
 
     </style>
 </head>
 <body>
-    <div id="loader">LOADING GEO-DATA...</div>
-    <div id="map"></div>
+    <div id="globe-container" class="view-container">
+        <svg id="globe"></svg>
+    </div>
+    <div id="map-container" class="view-container">
+        <div id="map"></div>
+    </div>
 
     <script>
-        // --- 1. Map and Tile Layer Setup ---
-        const map = L.map('map').setView([20, 30], 3); // ซูมออกมาให้เห็นภาพรวมโลก
-        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        const globeZoomThreshold = 3;
+
+        // --- A. LEAFLET 2D MAP SETUP ---
+        const map = L.map('map', { zoomControl: false }).setView([20, 30], globeZoomThreshold + 1);
+        L.control.zoom({ position: 'bottomright' }).addTo(map);
+
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
             attribution: '&copy; OpenStreetMap &copy; CARTO',
-            subdomains: 'abcd', maxZoom: 20
+            maxZoom: 20
         }).addTo(map);
 
-        // --- 2. Styling for Countries ---
-        const defaultStyle = {
-            fillColor: "#111",
-            fillOpacity: 0.7,
-            color: "#333", // สีเส้นขอบประเทศปกติ
-            weight: 1
+        // --- B. D3 3D GLOBE SETUP ---
+        const globeContainer = document.getElementById('globe-container');
+        const width = globeContainer.offsetWidth;
+        const height = globeContainer.offsetHeight;
+        const svg = d3.select("#globe").attr("width", width).attr("height", height);
+
+        const projection = d3.geoOrthographic()
+            .scale(Math.min(width, height) / 2 - 20)
+            .translate([width / 2, height / 2])
+            .clipAngle(90);
+
+        const path = d3.geoPath().projection(projection);
+
+        // Drawing the globe elements
+        const ocean = svg.append("path").datum({type: "Sphere"}).attr("class", "globe-ocean").attr("d", path);
+        const graticule = svg.append("path").datum(d3.geoGraticule10()).attr("class", "globe-graticule").attr("d", path);
+        let land;
+
+        // Auto-rotation
+        let autorotate;
+        const startRotation = () => {
+            autorotate = d3.timer(elapsed => {
+                projection.rotate([elapsed / 150, -15, 0]);
+                svg.selectAll("path").attr("d", path);
+            });
         };
-        const highlightStyle = {
-            fillColor: "#00ff41",
-            fillOpacity: 0.25,
-            color: "#00ff41", // สีเส้นขอบตอนไฮไลท์
-            weight: 2.5,
+        const stopRotation = () => {
+            if (autorotate) autorotate.stop();
         };
 
-        // --- 3. GeoJSON Interaction ---
-        let geoJsonLayer;
-        let selectedCountryLayer = null;
-        const loader = document.getElementById('loader');
-
-        // โหลดข้อมูลเขตแดนประเทศจากไฟล์ GeoJSON
-        fetch('https://raw.githubusercontent.com/johan/world.geo.json/master/countries.geo.json')
-            .then(response => response.json())
-            .then(data => {
-                loader.style.display = 'none'; // ซ่อนข้อความ Loading
-                
-                geoJsonLayer = L.geoJSON(data, {
-                    style: defaultStyle,
-                    onEachFeature: function (feature, layer) {
-                        layer.on('click', function (e) {
-                            // 1. รีเซ็ตสไตล์ของประเทศที่เคยเลือกไว้ (ถ้ามี)
-                            if (selectedCountryLayer) {
-                                geoJsonLayer.resetStyle(selectedCountryLayer);
-                            }
-
-                            // 2. ไฮไลท์ประเทศที่คลิก
-                            layer.setStyle(highlightStyle);
-                            layer.bringToFront(); // เอา Layer ที่เลือกมาไว้ข้างหน้าสุด
-
-                            // 3. อัปเดตตัวแปรที่เก็บ Layer ที่เลือก
-                            selectedCountryLayer = layer;
-                            
-                            // 4. แสดง Popup ชื่อประเทศ และซูม
-                            const countryName = feature.properties.name || 'Unknown';
-                            map.fitBounds(e.target.getBounds());
-                            layer.bindPopup(`<b>SYSTEM::TARGET_ACQUIRED</b><br>LOCATION: ${countryName}`).openPopup();
-
-                            // 5. หยุดไม่ให้ Event ของการคลิกส่งไปถึงแผนที่
-                            L.DomEvent.stopPropagation(e);
-                        });
-                    }
-                }).addTo(map);
+        // Drag to rotate
+        const drag = d3.drag()
+            .on("start", stopRotation)
+            .on("drag", (event) => {
+                const rotate = projection.rotate();
+                projection.rotate([rotate[0] + event.dx / 4, rotate[1] - event.dy / 4]);
+                svg.selectAll("path").attr("d", path);
             })
-            .catch(error => {
-                loader.innerText = 'FAILED TO LOAD GEO-DATA';
-                console.error('Error loading GeoJSON:', error);
+            .on("end", startRotation);
+        svg.call(drag);
+
+        // --- C. VIEW SWITCHING LOGIC ---
+        const mapContainer = document.getElementById('map-container');
+        function updateView() {
+            const currentZoom = map.getZoom();
+            if (currentZoom <= globeZoomThreshold) {
+                mapContainer.style.opacity = 0;
+                mapContainer.style.pointerEvents = 'none';
+                globeContainer.style.opacity = 1;
+                globeContainer.style.pointerEvents = 'auto';
+                startRotation();
+            } else {
+                globeContainer.style.opacity = 0;
+                globeContainer.style.pointerEvents = 'none';
+                mapContainer.style.opacity = 1;
+                mapContainer.style.pointerEvents = 'auto';
+                stopRotation();
+            }
+        }
+        map.on('zoomend', updateView);
+        
+        // --- D. DATA LAYER (COUNTRIES & INTERACTION) ---
+        const worldUrl = 'https://unpkg.com/world-atlas@2/countries-110m.json';
+        Promise.all([
+            d3.json(worldUrl)
+        ]).then(([worldData]) => {
+            const countries = topojson.feature(worldData, worldData.objects.countries);
+
+            // Draw countries on D3 Globe
+            land = svg.append("g")
+                .selectAll("path")
+                .data(countries.features)
+                .enter().append("path")
+                .attr("class", "globe-land")
+                .attr("d", path);
+
+            // Draw countries on Leaflet Map
+            let selectedLeafletLayer = null;
+            const geoJsonLayer = L.geoJSON(countries, {
+                style: {
+                    fillColor: "transparent",
+                    color: "transparent"
+                },
+                onEachFeature: (feature, layer) => {
+                    layer.on('click', e => {
+                        if (selectedLeafletLayer) selectedLeafletLayer.setStyle({ fillColor: "transparent" });
+                        layer.setStyle({ fillColor: 'var(--accent-color)', fillOpacity: 0.3 });
+                        selectedLeafletLayer = layer;
+                        L.DomEvent.stopPropagation(e);
+                    });
+                }
+            }).addTo(map);
+
+             map.on('click', () => {
+                if(selectedLeafletLayer) selectedLeafletLayer.setStyle({ fillColor: "transparent" });
             });
 
-        // Event listener สำหรับการคลิกบนแผนที่ (พื้นที่ที่ไม่ใช่ประเทศ)
-        map.on('click', function() {
-            if (selectedCountryLayer) {
-                geoJsonLayer.resetStyle(selectedCountryLayer); // รีเซ็ตสไตล์
-                selectedCountryLayer = null;
-            }
+            updateView(); // Initial check
         });
 
-        // --- 4. User Geolocation (ฟังก์ชันเดิมยังคงอยู่) ---
-        const liquidIcon = L.divIcon({
-            html: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="48" height="48"><path fill="#00ff41" d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`,
-            className: 'liquid-marker', iconSize: [48, 48],
-            iconAnchor: [24, 48], popupAnchor: [0, -48]
-        });
-
-        map.locate({setView: false, maxZoom: 16})
+        // --- E. GEOLOCATION ---
+        const userMarker = L.divIcon({ className: 'user-location-marker' });
+        map.locate()
            .on('locationfound', e => {
-               L.marker(e.latlng, {icon: liquidIcon}).addTo(map)
-                .bindPopup(`<b>SYSTEM::CURRENT_POSITION</b><br>You are within ${e.accuracy.toFixed(0)} meters from this point.`).openPopup();
-               // อาจจะซูมไปหาผู้ใช้ถ้ายังไม่มีการเลือกประเทศ
-               if (!selectedCountryLayer) {
-                   map.flyTo(e.latlng, 13);
-               }
+               L.marker(e.latlng, { icon: userMarker }).addTo(map)
+                .bindPopup("<b>You are here.</b>")
+               map.flyTo(e.latlng, 13);
            });
 
     </script>
